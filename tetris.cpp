@@ -31,7 +31,7 @@ int
 main()
 {
 	CHECK(SDL_Init(SDL_INIT_VIDEO) >= 0);
-	SDL_Window *const window = SDL_CreateWindow("SDL Tutorial", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_SHOWN);
+	SDL_Window *const window = SDL_CreateWindow("Tetris", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_SHOWN);
 	CHECK(window);
 	SDL_Renderer *const rend = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	CHECK(rend);
