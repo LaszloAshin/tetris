@@ -5,25 +5,53 @@
 #include <cassert>
 #include <stdexcept>
 
+enum class Cell {
+	empty, i, o, t, s, z, j, l
+};
+
+struct Point {
+	int x, y;
+};
+
+struct Playfield {
+	enum { width = 10, height = 22 };
+
+	Playfield() { cells_.fill(Cell::empty); }
+
+	Cell operator[](Point p) const { return cells_[offset(p)]; }
+	Cell& operator[](Point p) { return cells_[offset(p)]; }
+
+private:
+	using Cells = std::array<Cell, width * height>;
+
+	static int
+	offset(Point p)
+	{
+		assert(p.x >= 0 && p.x < width);
+		assert(p.y >= 0 && p.y < height);
+		return p.y * width + p.x;
+	}
+
+	Cells cells_;
+};
+
 struct Model {
 	void
 	update()
 	{
-		x_ += dx_;
-		if (x_ <= 0) {
-			x_ = 1;
-			dx_ = 5;
-		} else if (x_ >= 640) {
-			x_ = 640;
-			dx_ = -5;
-		}
+		pf_[Point{1, 0}] = Cell::i;
+		pf_[Point{2, 0}] = Cell::o;
+		pf_[Point{3, 0}] = Cell::t;
+		pf_[Point{4, 0}] = Cell::s;
+		pf_[Point{5, 0}] = Cell::z;
+		pf_[Point{6, 0}] = Cell::j;
+		pf_[Point{7, 0}] = Cell::l;
 	}
 
-	int getX() const { return x_; }
+	const Playfield& getPlayfield() const { return pf_; }
 
 private:
-	int x_ = 0;
-	int dx_ = 5;
+	Playfield pf_;
 };
 
 using SdlWindow = std::unique_ptr<SDL_Window, void(*)(SDL_Window*)>;
@@ -38,7 +66,7 @@ struct Sdl {
 	createWindow()
 	{
 		const auto u = SDL_WINDOWPOS_UNDEFINED;
-		SDL_Window* window = SDL_CreateWindow("Tetris", u, u, 640, 480, SDL_WINDOW_SHOWN);
+		SDL_Window* window = SDL_CreateWindow("Tetris", u, u, 10 * 20 + 1, 22 * 20 + 1, SDL_WINDOW_SHOWN);
 		if (!window) throw std::runtime_error("SDL_CreateWindow");
 		return SdlWindow(window, SDL_DestroyWindow);
 	}
@@ -52,11 +80,14 @@ struct SdlColor {
 	{}
 
 	static SdlColor black() { return SdlColor(0, 0, 0); }
+	static SdlColor gray() { return SdlColor(32, 32, 32); }
+	static SdlColor cyan() { return SdlColor(0, 255, 255); }
+	static SdlColor yellow() { return SdlColor(255, 255, 0); }
+	static SdlColor purple() { return SdlColor(128, 0, 128); }
+	static SdlColor green() { return SdlColor(0, 255, 0); }
 	static SdlColor red() { return SdlColor(255, 0, 0); }
-};
-
-struct SdlPoint {
-	int x, y;
+	static SdlColor blue() { return SdlColor(0, 0, 255); }
+	static SdlColor orange() { return SdlColor(255, 165, 0); }
 };
 
 struct SdlRenderer {
@@ -68,8 +99,9 @@ struct SdlRenderer {
 
 	void setDrawColor(SdlColor c) { SDL_SetRenderDrawColor(rend_.get(), c.r, c.g, c.b, c.opacity); }
 	void clear() { SDL_RenderClear(rend_.get()); }
-	void drawLine(SdlPoint a, SdlPoint b) { SDL_RenderDrawLine(rend_.get(), a.x, a.y, b.x, b.y); }
+	void drawLine(Point a, Point b) { SDL_RenderDrawLine(rend_.get(), a.x, a.y, b.x, b.y); }
 	void present() { SDL_RenderPresent(rend_.get()); }
+	void fillRect(SDL_Rect r) { SDL_RenderFillRect(rend_.get(), &r); }
 
 private:
 	std::unique_ptr<SDL_Renderer, void(*)(SDL_Renderer*)> rend_;
@@ -83,12 +115,46 @@ struct SdlView {
 	{
 		rend_.setDrawColor(SdlColor::black());
 		rend_.clear();
-		rend_.setDrawColor(SdlColor::red());
-		rend_.drawLine(SdlPoint{model_.getX(), 50}, SdlPoint{100, 100});
+		render(model_.getPlayfield());
 		rend_.present();
 	}
 
 private:
+	void
+	render(const Playfield& pf)
+	{
+		const int cellsize = 20;
+		rend_.setDrawColor(SdlColor::gray());
+		for (int y = 0; y != pf.height + 1; ++y) {
+			rend_.drawLine(Point{0, y * cellsize}, Point{pf.width * cellsize, y * cellsize});
+		}
+		for (int x = 0; x != pf.width + 1; ++x) {
+			rend_.drawLine(Point{x * cellsize, 0}, Point{x * cellsize, pf.height * cellsize});
+		}
+		for (int y = 0; y != pf.height; ++y) {
+			for (int x = 0; x != pf.width; ++x) {
+				rend_.setDrawColor(getColor(pf[Point{x, y}]));
+				rend_.fillRect(SDL_Rect{x * cellsize + 1, y * cellsize + 1, cellsize - 1, cellsize - 1});
+			}
+		}
+	}
+
+	SdlColor
+	getColor(Cell c)
+	{
+		switch (c) {
+		case Cell::empty: return SdlColor::black();
+		case Cell::i: return SdlColor::cyan();
+		case Cell::o: return SdlColor::yellow();
+		case Cell::t: return SdlColor::purple();
+		case Cell::s: return SdlColor::green();
+		case Cell::z: return SdlColor::red();
+		case Cell::j: return SdlColor::blue();
+		case Cell::l: return SdlColor::orange();
+		}
+		assert(!"invalid cell");
+	}
+
 	const Model& model_;
 	SdlRenderer& rend_;
 };
