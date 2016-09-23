@@ -1,26 +1,9 @@
 #include <SDL.h>
 
-#include <unistd.h>
-
 #include <algorithm>
 #include <memory>
-#include <iostream>
 #include <cassert>
-
-__attribute__((noreturn))
-static void
-die(const char* file, int line, const char* expr)
-{
-	char buffer[256];
-	const int n = snprintf(buffer, sizeof(buffer), "%s:%d: assertion failed: %s\n", file, line, expr);
-#	pragma GCC diagnostic push
-#	pragma GCC diagnostic ignored "-Wunused-result"
-	write(STDERR_FILENO, buffer, n);
-#	pragma GCC diagnostic pop
-	abort();
-}
-
-#define CHECK(expr) do { if (!(expr)) die(__FILE__, __LINE__, #expr); } while (0)
+#include <stdexcept>
 
 struct Model {
 	void
@@ -46,7 +29,7 @@ private:
 using SdlWindow = std::unique_ptr<SDL_Window, void(*)(SDL_Window*)>;
 
 struct Sdl {
-	Sdl() { CHECK(SDL_Init(SDL_INIT_VIDEO) >= 0); }
+	Sdl() { if(SDL_Init(SDL_INIT_VIDEO) < 0) throw std::runtime_error("SDL_Init"); }
 	Sdl(const Sdl&) = delete;
 	Sdl& operator=(const Sdl&) = delete;
 	~Sdl() { SDL_Quit(); }
@@ -54,8 +37,9 @@ struct Sdl {
 	SdlWindow
 	createWindow()
 	{
-		SDL_Window* window = SDL_CreateWindow("Tetris", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_SHOWN);
-		CHECK(window);
+		const auto u = SDL_WINDOWPOS_UNDEFINED;
+		SDL_Window* window = SDL_CreateWindow("Tetris", u, u, 640, 480, SDL_WINDOW_SHOWN);
+		if (!window) throw std::runtime_error("SDL_CreateWindow");
 		return SdlWindow(window, SDL_DestroyWindow);
 	}
 };
