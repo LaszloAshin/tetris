@@ -13,6 +13,12 @@ struct Point {
 	int x, y;
 };
 
+Point
+operator+(Point lhs, Point rhs)
+{
+	return Point{lhs.x + rhs.x, lhs.y + rhs.y};
+}
+
 struct Playfield {
 	enum { width = 10, height = 22 };
 
@@ -21,8 +27,40 @@ struct Playfield {
 	Cell operator[](Point p) const { return cells_[offset(p)]; }
 	Cell& operator[](Point p) { return cells_[offset(p)]; }
 
+	void
+	collapseFullLines()
+	{
+		for (int y = height - 1; y;) {
+			if (isLineFull(y)) {
+				scrollDownTill(y);
+			} else {
+				--y;
+			}
+		}
+	}
+
 private:
 	using Cells = std::array<Cell, width * height>;
+
+	bool
+	isLineFull(int y)
+	{
+		for (int x = 0; x != width; ++x) {
+			if ((*this)[Point{x, y}] == Cell::empty) return false;
+		}
+		return true;
+	}
+
+	void
+	scrollDownTill(int yy)
+	{
+		for (int y = yy - 1; y; --y) {
+			for (int x = 0; x != width; ++x) {
+				(*this)[Point{x, y + 1}] = (*this)[Point{x, y}];
+				// TODO: upper line?
+			}
+		}
+	}
 
 	static int
 	offset(Point p)
@@ -36,30 +74,50 @@ private:
 };
 
 struct Tetromino {
+	Tetromino() { respawn(); }
+
 	Point getPosition() const { return position_; }
 	Cell getColor() const { return color_; }
 
-	void moveLeft() { --position_.x; }
-	void moveRight() { ++position_.x; }
+	void moveLeft() { position_.x = std::max(position_.x - 1, 0); }
+	void moveRight() { position_.x = std::min(position_.x + 1, 9); }
+	void moveDown() { position_.y = std::min(position_.y + 1, 21); }
+	void respawn() { position_ = {4, 0}; color_ = static_cast<Cell>(1 + rand() % 7); }
 
 private:
-	Point position_{4, 0};
-	Cell color_ = Cell::i;
+	Point position_;
+	Cell color_;
 };
 
 struct Model {
-	void
-	update()
-	{
-	}
-
+	void update() { stepDown(); }
 	void moveLeft() { tm_.moveLeft(); }
 	void moveRight() { tm_.moveRight(); }
+	void drop() { while (stepDown()); }
 
 	const Playfield& getPlayfield() const { return pf_; }
 	const Tetromino& getTetromino() const { return tm_; }
 
 private:
+	bool
+	stepDown()
+	{
+		if (tm_.getPosition().y == 21 || pf_[tm_.getPosition() + Point{0, 1}] != Cell::empty) {
+			freezeCurrentPiece();
+			return false;
+		}
+		tm_.moveDown();
+		return true;
+	}
+
+	void
+	freezeCurrentPiece()
+	{
+		pf_[tm_.getPosition()] = tm_.getColor();
+		tm_.respawn();
+		pf_.collapseFullLines();
+	}
+
 	Playfield pf_;
 	Tetromino tm_;
 };
@@ -235,6 +293,8 @@ struct SdlControl {
 					model_.moveLeft();
 				} else if (ev.key.keysym.sym == SDLK_RIGHT) {
 					model_.moveRight();
+				} else if (ev.key.keysym.sym == SDLK_DOWN) {
+					model_.drop();
 				}
 			}
 		}
@@ -256,9 +316,9 @@ main()
 	Model model;
 	SdlControl control(model);
 	SdlView view(model, rend);
-	while (!control.shouldQuit()) {
+	for (int i = 0; !control.shouldQuit(); ++i) {
 		control.update();
-		model.update();
+		if (!(i & 15)) model.update();
 		view.render();
 	}
 }
