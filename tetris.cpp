@@ -35,23 +35,33 @@ private:
 	Cells cells_;
 };
 
+struct Tetromino {
+	Point getPosition() const { return position_; }
+	Cell getColor() const { return color_; }
+
+	void moveLeft() { --position_.x; }
+	void moveRight() { ++position_.x; }
+
+private:
+	Point position_{4, 0};
+	Cell color_ = Cell::i;
+};
+
 struct Model {
 	void
 	update()
 	{
-		pf_[Point{1, 0}] = Cell::i;
-		pf_[Point{2, 0}] = Cell::o;
-		pf_[Point{3, 0}] = Cell::t;
-		pf_[Point{4, 0}] = Cell::s;
-		pf_[Point{5, 0}] = Cell::z;
-		pf_[Point{6, 0}] = Cell::j;
-		pf_[Point{7, 0}] = Cell::l;
 	}
 
+	void moveLeft() { tm_.moveLeft(); }
+	void moveRight() { tm_.moveRight(); }
+
 	const Playfield& getPlayfield() const { return pf_; }
+	const Tetromino& getTetromino() const { return tm_; }
 
 private:
 	Playfield pf_;
+	Tetromino tm_;
 };
 
 using SdlWindow = std::unique_ptr<SDL_Window, void(*)(SDL_Window*)>;
@@ -116,14 +126,16 @@ struct SdlView {
 		rend_.setDrawColor(SdlColor::black());
 		rend_.clear();
 		render(model_.getPlayfield());
+		render(model_.getTetromino());
 		rend_.present();
 	}
 
 private:
+	static const int cellsize = 20;
+
 	void
 	render(const Playfield& pf)
 	{
-		const int cellsize = 20;
 		rend_.setDrawColor(SdlColor::gray());
 		for (int y = 0; y != pf.height + 1; ++y) {
 			rend_.drawLine(Point{0, y * cellsize}, Point{pf.width * cellsize, y * cellsize});
@@ -137,6 +149,14 @@ private:
 				rend_.fillRect(SDL_Rect{x * cellsize + 1, y * cellsize + 1, cellsize - 1, cellsize - 1});
 			}
 		}
+	}
+
+	void
+	render(const Tetromino& tm)
+	{
+		rend_.setDrawColor(getColor(tm.getColor()));
+		const auto p = tm.getPosition();
+		rend_.fillRect(SDL_Rect{p.x * cellsize + 1, p.y * cellsize + 1, cellsize - 1, cellsize - 1});
 	}
 
 	SdlColor
@@ -199,6 +219,34 @@ requestSdlQuit()
 	SDL_PushEvent(&e);
 }
 
+struct SdlControl {
+	SdlControl(Model& model) : model_(model) {}
+
+	void
+	update()
+	{
+		for (const auto& ev : SdlEvents()) {
+			if (ev.type == SDL_QUIT) {
+				quit_ = true;
+			} else if (ev.type == SDL_KEYDOWN) {
+				if (ev.key.keysym.sym == SDLK_ESCAPE) {
+					requestSdlQuit();
+				} else if (ev.key.keysym.sym == SDLK_LEFT) {
+					model_.moveLeft();
+				} else if (ev.key.keysym.sym == SDLK_RIGHT) {
+					model_.moveRight();
+				}
+			}
+		}
+	}
+
+	bool shouldQuit() const { return quit_; }
+
+private:
+	Model& model_;
+	bool quit_{};
+};
+
 int
 main()
 {
@@ -206,18 +254,11 @@ main()
 	auto window = sdl.createWindow();
 	SdlRenderer rend(window);
 	Model model;
+	SdlControl control(model);
 	SdlView view(model, rend);
-	while (true) {
-		for (const auto& ev : SdlEvents()) {
-			if (ev.type == SDL_QUIT) {
-				return EXIT_SUCCESS;
-			} else if (ev.type == SDL_KEYDOWN) {
-				if (ev.key.keysym.sym == SDLK_ESCAPE) {
-					requestSdlQuit();
-				}
-			}
-		}
-		view.render();
+	while (!control.shouldQuit()) {
+		control.update();
 		model.update();
+		view.render();
 	}
 }
