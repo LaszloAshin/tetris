@@ -280,29 +280,32 @@ requestSdlQuit()
 struct SdlControl {
 	SdlControl(Model& model) : model_(model) {}
 
-	void
-	update()
-	{
-		for (const auto& ev : SdlEvents()) {
-			if (ev.type == SDL_QUIT) {
-				quit_ = true;
-			} else if (ev.type == SDL_KEYDOWN) {
-				if (ev.key.keysym.sym == SDLK_ESCAPE) {
-					requestSdlQuit();
-				} else if (ev.key.keysym.sym == SDLK_LEFT) {
-					model_.moveLeft();
-				} else if (ev.key.keysym.sym == SDLK_RIGHT) {
-					model_.moveRight();
-				} else if (ev.key.keysym.sym == SDLK_DOWN) {
-					model_.drop();
-				}
-			}
-		}
-	}
+	void update() { for (const auto& ev : SdlEvents()) process(ev); }
 
 	bool shouldQuit() const { return quit_; }
 
 private:
+	void
+	process(const SDL_Event& ev)
+	{
+		if (ev.type == SDL_QUIT) {
+			quit_ = true;
+		} else if (ev.type == SDL_KEYDOWN) {
+			process(ev.key);
+		}
+	}
+
+	void
+	process(const SDL_KeyboardEvent& kev)
+	{
+		switch (kev.keysym.sym) {
+		case SDLK_ESCAPE: requestSdlQuit(); break;
+		case SDLK_LEFT: model_.moveLeft(); break;
+		case SDLK_RIGHT: model_.moveRight(); break;
+		case SDLK_DOWN: model_.drop(); break;
+		}
+	}
+
 	Model& model_;
 	bool quit_{};
 };
