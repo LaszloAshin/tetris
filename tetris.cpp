@@ -9,23 +9,45 @@ enum class Cell {
 	empty, i, o, t, s, z, j, l
 };
 
-struct Point {
-	int x, y;
+template <typename T>
+struct Point2 {
+	T x, y;
+
+	Point2() : x(), y() {}
+	Point2(T x, T y) : x(x), y(y) {}
+
+	template <typename U>
+	Point2(const Point2<U>& rhs)
+	: x(rhs.x), y(rhs.y)
+	{}
 };
 
-Point
-operator+(Point lhs, Point rhs)
+template <typename T>
+Point2<T>&
+operator+=(Point2<T>& lhs, Point2<T> rhs)
 {
-	return Point{lhs.x + rhs.x, lhs.y + rhs.y};
+	lhs.x += rhs.x;
+	lhs.y += rhs.y;
+	return lhs;
 }
+
+template <typename T>
+Point2<T>
+operator+(Point2<T> lhs, Point2<T> rhs)
+{
+	return lhs += rhs;
+}
+
+using Point2i = Point2<int>;
+using Point2f = Point2<float>;
 
 struct Playfield {
 	enum { width = 10, height = 22 };
 
 	Playfield() { cells_.fill(Cell::empty); }
 
-	Cell operator[](Point p) const { return cells_[offset(p)]; }
-	Cell& operator[](Point p) { return cells_[offset(p)]; }
+	Cell operator[](Point2i p) const { return cells_[offset(p)]; }
+	Cell& operator[](Point2i p) { return cells_[offset(p)]; }
 
 	void
 	collapseFullLines()
@@ -46,7 +68,7 @@ private:
 	isLineFull(int y)
 	{
 		for (int x = 0; x != width; ++x) {
-			if ((*this)[Point{x, y}] == Cell::empty) return false;
+			if ((*this)[Point2i{x, y}] == Cell::empty) return false;
 		}
 		return true;
 	}
@@ -56,14 +78,14 @@ private:
 	{
 		for (int y = yy - 1; y; --y) {
 			for (int x = 0; x != width; ++x) {
-				(*this)[Point{x, y + 1}] = (*this)[Point{x, y}];
+				(*this)[Point2i{x, y + 1}] = (*this)[Point2i{x, y}];
 				// TODO: upper line?
 			}
 		}
 	}
 
 	static int
-	offset(Point p)
+	offset(Point2i p)
 	{
 		assert(p.x >= 0 && p.x < width);
 		assert(p.y >= 0 && p.y < height);
@@ -73,26 +95,63 @@ private:
 	Cells cells_;
 };
 
+using TetroShape = std::array<Point2f, 4>;
+
+struct TetroBreed {
+	virtual ~TetroBreed() {}
+
+	virtual Cell getColor() const = 0;
+	virtual TetroShape getShape() const = 0;
+};
+
+class ITetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::i; }
+	TetroShape getShape() const override { return {{{-1.5, 0.5}, {-0.5, 0.5}, {0.5, 0.5}, {1.5, 0.5}}}; }
+};
+
+template <class Breed>
+const TetroBreed*
+instance()
+{
+	static const Breed b;
+	return &b;
+}
+
 struct Tetromino {
 	Tetromino() { respawn(); }
 
-	Point getPosition() const { return position_; }
-	Cell getColor() const { return color_; }
+	Cell getColor() const { return breed_->getColor(); }
 
-	void moveLeft() { position_.x = std::max(position_.x - 1, 0); }
-	void moveRight() { position_.x = std::min(position_.x + 1, 9); }
-	void moveDown() { position_.y = std::min(position_.y + 1, 21); }
-	void respawn() { position_ = {4, 0}; color_ = static_cast<Cell>(1 + rand() % 7); }
+	TetroShape
+	getShape()
+	const
+	{
+		auto result = breed_->getShape();
+		std::transform(result.begin(), result.end(), result.begin(), [this](Point2f p){ return p + position_; });
+		return result;
+	}
+
+	void move(Point2f d) { position_ += d; }
+
+	void
+	respawn()
+	{
+		static const TetroBreed* breeds[] = {
+			  instance<ITetroBreed>()
+		};
+		position_ = {4.5, 0};
+		breed_ = breeds[rand() % (sizeof(breeds) / sizeof(breeds[0]))];
+	}
 
 private:
-	Point position_;
-	Cell color_;
+	Point2f position_;
+	const TetroBreed* breed_{};
 };
 
 struct Model {
 	void update() { stepDown(); }
-	void moveLeft() { tm_.moveLeft(); }
-	void moveRight() { tm_.moveRight(); }
+	void moveLeft() { checkAndMove({-1, 0}); }
+	void moveRight() { checkAndMove({1, 0}); }
 	void drop() { while (stepDown()); }
 
 	const Playfield& getPlayfield() const { return pf_; }
@@ -102,20 +161,47 @@ private:
 	bool
 	stepDown()
 	{
-		if (tm_.getPosition().y == 21 || pf_[tm_.getPosition() + Point{0, 1}] != Cell::empty) {
-			freezeCurrentPiece();
-			return false;
-		}
-		tm_.moveDown();
-		return true;
+		const bool result = checkAndMove({0, 1});
+		if (!result) freezeCurrentPiece();
+		return result;
+	}
+
+	bool
+	checkAndMove(Point2f d)
+	{
+		bool result = mayMove(tm_.getShape(), d);
+		if (result) tm_.move(d);
+		return result;
+	}
+
+	bool
+	mayMove(const TetroShape& ts, Point2i dir)
+	const
+	{
+		return std::all_of(ts.begin(), ts.end(), [this, dir](Point2i p){ return isFree(p + dir); });
+	}
+
+	bool
+	isFree(Point2i p)
+	const
+	{
+		if (p.x < 0 || p.x >= pf_.width) return false;
+		if (p.y < 0 || p.y >= pf_.height) return false;
+		return pf_[p] == Cell::empty;
 	}
 
 	void
 	freezeCurrentPiece()
 	{
-		pf_[tm_.getPosition()] = tm_.getColor();
+		freeze(tm_.getShape(), tm_.getColor());
 		tm_.respawn();
 		pf_.collapseFullLines();
+	}
+
+	void
+	freeze(const TetroShape& ts, Cell color)
+	{
+		std::for_each(ts.begin(), ts.end(), [this, color](Point2i p){ pf_[p] = color; });
 	}
 
 	Playfield pf_;
@@ -167,7 +253,7 @@ struct SdlRenderer {
 
 	void setDrawColor(SdlColor c) { SDL_SetRenderDrawColor(rend_.get(), c.r, c.g, c.b, c.opacity); }
 	void clear() { SDL_RenderClear(rend_.get()); }
-	void drawLine(Point a, Point b) { SDL_RenderDrawLine(rend_.get(), a.x, a.y, b.x, b.y); }
+	void drawLine(Point2i a, Point2i b) { SDL_RenderDrawLine(rend_.get(), a.x, a.y, b.x, b.y); }
 	void present() { SDL_RenderPresent(rend_.get()); }
 	void fillRect(SDL_Rect r) { SDL_RenderFillRect(rend_.get(), &r); }
 
@@ -196,14 +282,14 @@ private:
 	{
 		rend_.setDrawColor(SdlColor::gray());
 		for (int y = 0; y != pf.height + 1; ++y) {
-			rend_.drawLine(Point{0, y * cellsize}, Point{pf.width * cellsize, y * cellsize});
+			rend_.drawLine(Point2i{0, y * cellsize}, Point2i{pf.width * cellsize, y * cellsize});
 		}
 		for (int x = 0; x != pf.width + 1; ++x) {
-			rend_.drawLine(Point{x * cellsize, 0}, Point{x * cellsize, pf.height * cellsize});
+			rend_.drawLine(Point2i{x * cellsize, 0}, Point2i{x * cellsize, pf.height * cellsize});
 		}
 		for (int y = 0; y != pf.height; ++y) {
 			for (int x = 0; x != pf.width; ++x) {
-				rend_.setDrawColor(getColor(pf[Point{x, y}]));
+				rend_.setDrawColor(getColor(pf[Point2i{x, y}]));
 				rend_.fillRect(SDL_Rect{x * cellsize + 1, y * cellsize + 1, cellsize - 1, cellsize - 1});
 			}
 		}
@@ -213,7 +299,18 @@ private:
 	render(const Tetromino& tm)
 	{
 		rend_.setDrawColor(getColor(tm.getColor()));
-		const auto p = tm.getPosition();
+		render(tm.getShape());
+	}
+
+	void
+	render(const TetroShape& ts)
+	{
+		std::for_each(ts.begin(), ts.end(), [this](Point2i p){ render(p); });
+	}
+
+	void
+	render(const Point2i p)
+	{
 		rend_.fillRect(SDL_Rect{p.x * cellsize + 1, p.y * cellsize + 1, cellsize - 1, cellsize - 1});
 	}
 

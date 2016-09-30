@@ -16,5 +16,5 @@ LDLIBS += $(shell sdl2-config --libs)
 CPPFLAGS += -fdata-sections -ffunction-sections
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += -Wl,--relax
-LDFLAGS += -static-libgcc
-LDFLAGS += -static-libstdc++
+#LDFLAGS += -static-libgcc
+#LDFLAGS += -static-libstdc++
