@@ -41,6 +41,55 @@ operator+(Point2<T> lhs, Point2<T> rhs)
 using Point2i = Point2<int>;
 using Point2f = Point2<float>;
 
+template <typename T>
+struct Matrix2 {
+	T a, b;
+	T c, d;
+
+	Matrix2()
+	: a(1), b(0)
+	, c(0), d(1)
+	{}
+
+	Matrix2(T a, T b, T c, T d)
+	: a(a), b(b), c(c), d(d)
+	{}
+};
+
+template <typename T>
+Matrix2<T>
+makeRotationMatrix(float phi)
+{
+	return Matrix2<T>{
+		  cosf(phi), -sinf(phi),
+		  sinf(phi), cosf(phi)
+	};
+}
+
+template <typename T>
+Point2<T>
+operator*(const Matrix2<T>& lhs, Point2<T> rhs)
+{
+	return Point2<T>{
+		  lhs.a * rhs.x + lhs.b * rhs.y
+		, lhs.c * rhs.x + lhs.d * rhs.y
+	};
+}
+
+template <typename T>
+Matrix2<T>&
+operator*=(Matrix2<T>& lhs, const Matrix2<T>& rhs)
+{
+	const auto l = lhs;
+	lhs.a = l.a * rhs.a + l.b * rhs.c;
+	lhs.b = l.a * rhs.b + l.b * rhs.d;
+	lhs.c = l.c * rhs.a + l.d * rhs.c;
+	lhs.d = l.c * rhs.b + l.d * rhs.d;
+	return lhs;
+}
+
+using Matrix2f = Matrix2<float>;
+
 struct Playfield {
 	enum { width = 10, height = 22 };
 
@@ -117,8 +166,21 @@ instance()
 	return &b;
 }
 
+static const TetroBreed*
+getRandomBreed()
+{
+	static const TetroBreed* breeds[] = {
+		  instance<ITetroBreed>()
+	};
+	return breeds[rand() % (sizeof(breeds) / sizeof(breeds[0]))];
+}
+
 struct Tetromino {
-	Tetromino() { respawn(); }
+	Tetromino()
+	: position_{5, 0}
+	, breed_(getRandomBreed())
+	, rotation_()
+	{}
 
 	Cell getColor() const { return breed_->getColor(); }
 
@@ -127,31 +189,31 @@ struct Tetromino {
 	const
 	{
 		auto result = breed_->getShape();
-		std::transform(result.begin(), result.end(), result.begin(), [this](Point2f p){ return p + position_; });
+		auto m = makeRotationMatrix<float>(rotation_ * M_PI / 2);
+		std::transform(result.begin(), result.end(), result.begin(), [this, &m](Point2f p){ return m * p + position_; });
 		return result;
 	}
 
-	void move(Point2f d) { position_ += d; }
-
-	void
-	respawn()
-	{
-		static const TetroBreed* breeds[] = {
-			  instance<ITetroBreed>()
-		};
-		position_ = {4.5, 0};
-		breed_ = breeds[rand() % (sizeof(breeds) / sizeof(breeds[0]))];
-	}
+	Tetromino rotate() const { return Tetromino(position_, breed_, (rotation_ + 1) & 3); }
+	Tetromino move(Point2f d) const { return Tetromino(position_ + d, breed_, rotation_); }
 
 private:
+	Tetromino(Point2f p, const TetroBreed* b, int rot)
+	: position_(p)
+	, breed_(b)
+	, rotation_(rot)
+	{}
+
 	Point2f position_;
 	const TetroBreed* breed_{};
+	int rotation_;
 };
 
 struct Model {
 	void update() { stepDown(); }
-	void moveLeft() { checkAndMove({-1, 0}); }
-	void moveRight() { checkAndMove({1, 0}); }
+	void rotate() { checkAndMove(tm_.rotate()); }
+	void moveLeft() { checkAndMove(tm_.move({-1, 0})); }
+	void moveRight() { checkAndMove(tm_.move({1, 0})); }
 	void drop() { while (stepDown()); }
 
 	const Playfield& getPlayfield() const { return pf_; }
@@ -161,24 +223,24 @@ private:
 	bool
 	stepDown()
 	{
-		const bool result = checkAndMove({0, 1});
+		const bool result = checkAndMove(tm_.move({0, 1}));
 		if (!result) freezeCurrentPiece();
 		return result;
 	}
 
 	bool
-	checkAndMove(Point2f d)
+	checkAndMove(const Tetromino& t)
 	{
-		bool result = mayMove(tm_.getShape(), d);
-		if (result) tm_.move(d);
+		bool result = isFree(t.getShape());
+		if (result) tm_ = t;
 		return result;
 	}
 
 	bool
-	mayMove(const TetroShape& ts, Point2i dir)
+	isFree(const TetroShape& ts)
 	const
 	{
-		return std::all_of(ts.begin(), ts.end(), [this, dir](Point2i p){ return isFree(p + dir); });
+		return std::all_of(ts.begin(), ts.end(), [this](Point2i p){ return isFree(p); });
 	}
 
 	bool
@@ -194,7 +256,7 @@ private:
 	freezeCurrentPiece()
 	{
 		freeze(tm_.getShape(), tm_.getColor());
-		tm_.respawn();
+		tm_ = Tetromino();
 		pf_.collapseFullLines();
 	}
 
@@ -400,6 +462,7 @@ private:
 		case SDLK_LEFT: model_.moveLeft(); break;
 		case SDLK_RIGHT: model_.moveRight(); break;
 		case SDLK_DOWN: model_.drop(); break;
+		case SDLK_UP: model_.rotate(); break;
 		}
 	}
 
