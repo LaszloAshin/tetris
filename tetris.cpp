@@ -186,17 +186,17 @@ class OTetroBreed : public TetroBreed {
 
 class STetroBreed : public TetroBreed {
 	Cell getColor() const override { return Cell::s; }
-	TetroShape getShape() const override { return {{{-2, 0}, {0, 0}, {0, -2}, {2, -2}}}; }
+	TetroShape getShape() const override { return {{{-2, 2}, {0, 2}, {0, 0}, {2, 0}}}; }
 };
 
 class TTetroBreed : public TetroBreed {
 	Cell getColor() const override { return Cell::t; }
-	TetroShape getShape() const override { return {{{-2, 0}, {0, 0}, {0, -2}, {2, 0}}}; }
+	TetroShape getShape() const override { return {{{-2, 0}, {0, 0}, {0, 2}, {2, 0}}}; }
 };
 
 class ZTetroBreed : public TetroBreed {
 	Cell getColor() const override { return Cell::z; }
-	TetroShape getShape() const override { return {{{-2, -2}, {0, 0}, {0, -2}, {2, 0}}}; }
+	TetroShape getShape() const override { return {{{-2, 0}, {0, 2}, {0, 0}, {2, 2}}}; }
 };
 
 static const TetroBreed*
