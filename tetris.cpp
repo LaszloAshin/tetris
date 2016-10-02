@@ -15,11 +15,6 @@ struct Point2 {
 
 	Point2() : x(), y() {}
 	Point2(T x, T y) : x(x), y(y) {}
-
-	template <typename U>
-	Point2(const Point2<U>& rhs)
-	: x(rhs.x), y(rhs.y)
-	{}
 };
 
 template <typename T>
@@ -38,8 +33,14 @@ operator+(Point2<T> lhs, Point2<T> rhs)
 	return lhs += rhs;
 }
 
+template <typename T>
+Point2<T>
+operator/(Point2<T> lhs, int rhs)
+{
+	return {lhs.x / rhs, lhs.y / rhs};
+}
+
 using Point2i = Point2<int>;
-using Point2f = Point2<float>;
 
 template <typename T>
 struct Matrix2 {
@@ -56,13 +57,12 @@ struct Matrix2 {
 	{}
 };
 
-template <typename T>
-Matrix2<T>
-makeRotationMatrix(float phi)
+Matrix2<int>
+makeRotation()
 {
-	return Matrix2<T>{
-		  cosf(phi), -sinf(phi),
-		  sinf(phi), cosf(phi)
+	return Matrix2<int>{
+		  0, -1,
+		  1, 0
 	};
 }
 
@@ -88,7 +88,7 @@ operator*=(Matrix2<T>& lhs, const Matrix2<T>& rhs)
 	return lhs;
 }
 
-using Matrix2f = Matrix2<float>;
+using Matrix2i = Matrix2<int>;
 
 struct Playfield {
 	enum { width = 10, height = 22 };
@@ -144,18 +144,14 @@ private:
 	Cells cells_;
 };
 
-using TetroShape = std::array<Point2f, 4>;
+using TetroShape = std::array<Point2i, 4>;
 
 struct TetroBreed {
 	virtual ~TetroBreed() {}
 
 	virtual Cell getColor() const = 0;
 	virtual TetroShape getShape() const = 0;
-};
-
-class ITetroBreed : public TetroBreed {
-	Cell getColor() const override { return Cell::i; }
-	TetroShape getShape() const override { return {{{-1.5, 0.5}, {-0.5, 0.5}, {0.5, 0.5}, {1.5, 0.5}}}; }
+	virtual Point2i getCenter() const { return {0, 0}; }
 };
 
 template <class Breed>
@@ -166,18 +162,61 @@ instance()
 	return &b;
 }
 
+class ITetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::i; }
+	TetroShape getShape() const override { return {{{-3, 1}, {-1, 1}, {1, 1}, {3, 1}}}; }
+	Point2i getCenter() const override { return {1, 1}; }
+};
+
+class JTetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::j; }
+	TetroShape getShape() const override { return {{{-2, 2}, {-2, 0}, {0, 0}, {2, 0}}}; }
+};
+
+class LTetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::l; }
+	TetroShape getShape() const override { return {{{2, 2}, {-2, 0}, {0, 0}, {2, 0}}}; }
+};
+
+class OTetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::o; }
+	TetroShape getShape() const override { return {{{1, 1}, {-1, 1}, {-1, -1}, {1, -1}}}; }
+	Point2i getCenter() const override { return {1, 1}; }
+};
+
+class STetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::s; }
+	TetroShape getShape() const override { return {{{-2, 0}, {0, 0}, {0, -2}, {2, -2}}}; }
+};
+
+class TTetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::t; }
+	TetroShape getShape() const override { return {{{-2, 0}, {0, 0}, {0, -2}, {2, 0}}}; }
+};
+
+class ZTetroBreed : public TetroBreed {
+	Cell getColor() const override { return Cell::z; }
+	TetroShape getShape() const override { return {{{-2, -2}, {0, 0}, {0, -2}, {2, 0}}}; }
+};
+
 static const TetroBreed*
 getRandomBreed()
 {
 	static const TetroBreed* breeds[] = {
 		  instance<ITetroBreed>()
+		, instance<JTetroBreed>()
+		, instance<LTetroBreed>()
+		, instance<OTetroBreed>()
+		, instance<STetroBreed>()
+		, instance<TTetroBreed>()
+		, instance<ZTetroBreed>()
 	};
 	return breeds[rand() % (sizeof(breeds) / sizeof(breeds[0]))];
 }
 
 struct Tetromino {
 	Tetromino()
-	: position_{5, 0}
+	: position_{4, 0}
 	, breed_(getRandomBreed())
 	, rotation_()
 	{}
@@ -189,22 +228,26 @@ struct Tetromino {
 	const
 	{
 		auto result = breed_->getShape();
-		auto m = makeRotationMatrix<float>(rotation_ * M_PI / 2);
-		std::transform(result.begin(), result.end(), result.begin(), [this, &m](Point2f p){ return m * p + position_; });
+		Matrix2i m;
+		for (int i = rotation_; i; --i) {
+			m *= makeRotation();
+		}
+		auto c = breed_->getCenter();
+		std::transform(result.begin(), result.end(), result.begin(), [this, &m, c](Point2i p){ return (m * p + c) / 2 + position_; });
 		return result;
 	}
 
 	Tetromino rotate() const { return Tetromino(position_, breed_, (rotation_ + 1) & 3); }
-	Tetromino move(Point2f d) const { return Tetromino(position_ + d, breed_, rotation_); }
+	Tetromino move(Point2i d) const { return Tetromino(position_ + d, breed_, rotation_); }
 
 private:
-	Tetromino(Point2f p, const TetroBreed* b, int rot)
+	Tetromino(Point2i p, const TetroBreed* b, int rot)
 	: position_(p)
 	, breed_(b)
 	, rotation_(rot)
 	{}
 
-	Point2f position_;
+	Point2i position_;
 	const TetroBreed* breed_{};
 	int rotation_;
 };
@@ -371,9 +414,9 @@ private:
 	}
 
 	void
-	render(const Point2i p)
+	render(Point2i p)
 	{
-		rend_.fillRect(SDL_Rect{p.x * cellsize + 1, p.y * cellsize + 1, cellsize - 1, cellsize - 1});
+		rend_.fillRect(SDL_Rect{int(p.x * cellsize + 1), int(p.y * cellsize + 1), cellsize - 1, cellsize - 1});
 	}
 
 	SdlColor
